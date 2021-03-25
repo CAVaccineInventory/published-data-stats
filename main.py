@@ -74,9 +74,14 @@ class LocationsReport:
             registry=self.registry,
         )
         self.seen_ages = set()
-        self.now = datetime.datetime.now(datetime.timezone.utc)
 
     def serve(self) -> Response:
+        if self.seen_ages:
+            return Response(
+                "Tried to serve more than once!",
+                status=500,
+            )
+        self.now = datetime.datetime.now(datetime.timezone.utc)
         response = requests.get("https://api.vaccinateca.com/v1/locations.json")
         response.raise_for_status()
 
