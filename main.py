@@ -3,12 +3,17 @@
 import datetime
 import re
 from collections import defaultdict
-from typing import Set
+from typing import Any, Dict, Set
 
 import requests
 from dateutil.parser import parse
-from flask import Response
-from prometheus_client import CollectorRegistry, Gauge, Histogram, generate_latest
+from flask import Request, Response
+from prometheus_client import (  # type: ignore
+    CollectorRegistry,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 
 no_reasons = [
     "No: incorrect contact information",
@@ -38,10 +43,10 @@ class LocationsReport:
     total_nos: Gauge
     ago_hours: Histogram
 
-    seen_ages: Set[int]
+    seen_ages: Set[str]
     now: datetime.datetime
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.registry = CollectorRegistry()
         self.total_locations = Gauge(
             "locations_total_total", "Total number of locations", registry=self.registry
@@ -71,14 +76,17 @@ class LocationsReport:
         self.seen_ages = set()
         self.now = datetime.datetime.now(datetime.timezone.utc)
 
-    def serve(self):
+    def serve(self) -> Response:
         response = requests.get("https://api.vaccinateca.com/v1/locations.json")
         response.raise_for_status()
 
         data = response.json()
         self.total_locations.set(len(data["content"]))
-        yeses = {True: defaultdict(int), False: defaultdict(int)}
-        nos = defaultdict(int)
+        yeses: Dict[bool, Dict[str, int]] = {
+            True: defaultdict(int),
+            False: defaultdict(int),
+        }
+        nos: Dict[str, int] = defaultdict(int)
         for loc in data["content"]:
             self.observe_location(loc, yeses, nos)
 
@@ -89,7 +97,12 @@ class LocationsReport:
             self.total_nos.labels(reason[4:].capitalize()).set(nos[reason])
         return Response(generate_latest(registry=self.registry), mimetype="text/plain")
 
-    def observe_location(self, loc, yeses, nos):
+    def observe_location(
+        self,
+        loc: Dict[str, Any],
+        yeses: Dict[bool, Dict[str, int]],
+        nos: Dict[str, int],
+    ) -> None:
         if not bool(loc["Has Report"]):
             return
 
@@ -123,11 +136,11 @@ class LocationsReport:
             )
 
 
-def serve(request):
-    LocationsReport().serve()
+def serve(request: Request) -> Response:
+    return LocationsReport().serve()
 
 
-def main():
+def main() -> None:
     print(LocationsReport().serve().get_data().decode("utf-8"))
 
 
