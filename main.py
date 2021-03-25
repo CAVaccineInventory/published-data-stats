@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
 import datetime
+import re
 from collections import defaultdict
+from typing import Set
 
 import requests
 from dateutil.parser import parse
 from flask import Response
 from prometheus_client import CollectorRegistry, Gauge, Histogram, generate_latest
-
-ages = [16, 18, 50, 65, 70, 75, 80, 85]
 
 no_reasons = [
     "No: incorrect contact information",
@@ -57,6 +57,7 @@ def serve(request):
         labelnames=["yes"],
         registry=registry,
     )
+    seen_ages: Set[int] = set()
 
     now = datetime.datetime.now(datetime.timezone.utc)
 
@@ -77,10 +78,11 @@ def serve(request):
             if is_yes:
                 walkin = "Yes: walk-ins accepted" in info
                 age = "None"
-                for possible_age in ages:
-                    if f"Yes: vaccinating {possible_age}+" in info:
-                        age = possible_age
-                        break
+                for tag in sorted(info):
+                    maybe_age_tag = re.match(r"Yes: vaccinating (\d+)\+", tag)
+                    if maybe_age_tag:
+                        age = maybe_age_tag.group(1)
+                        seen_ages.add(age)
                 yeses[walkin][age] += 1
             else:
                 for reason in no_reasons:
@@ -99,7 +101,7 @@ def serve(request):
 
     total_reports.set(reports)
     for walkin in (True, False):
-        for age in ["None"] + ages:
+        for age in ["None"] + sorted(seen_ages):
             total_yeses.labels(walkin, age).set(yeses[walkin][age])
     for reason in ["No: other"] + no_reasons:
         total_nos.labels(reason[4:].capitalize()).set(nos[reason])
